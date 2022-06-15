@@ -59,17 +59,19 @@ uint8_t Softuart_IsGpioValid(uint8_t gpio_id) {
 }
 
 // gpio_id should be validated in machine_softuart
-void Softuart_SetPinRx(Softuart *s, uint8_t gpio_id) {
+void Softuart_SetPinRx(Softuart *s, uint8_t gpio_id, bool inverted) {
     s->pin_rx.gpio_id = gpio_id;
     s->pin_rx.gpio_mux_name = softuart_reg[gpio_id].gpio_mux_name;
     s->pin_rx.gpio_func = softuart_reg[gpio_id].gpio_func;
+    s->pin_rx.inverted = inverted;
 }
 
 // gpio_id should be validated in machine_softuart
-void Softuart_SetPinTx(Softuart *s, uint8_t gpio_id) {
+void Softuart_SetPinTx(Softuart *s, uint8_t gpio_id, bool inverted) {
     s->pin_tx.gpio_id = gpio_id;
     s->pin_tx.gpio_mux_name = softuart_reg[gpio_id].gpio_mux_name;
     s->pin_tx.gpio_func = softuart_reg[gpio_id].gpio_func;
+    s->pin_tx.inverted = inverted;
 }
 
 void Softuart_EnableRs485(Softuart *s, uint8_t gpio_id) {
@@ -114,7 +116,7 @@ void Softuart_Init(Softuart *s, uint32_t baudrate) {
         PIN_PULLUP_EN(s->pin_tx.gpio_mux_name);
 
         // set high for tx idle
-        GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), 1);
+        GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), !s->pin_tx.inverted);
         unsigned int delay = 100000;
         os_delay_us(delay);
     }
@@ -207,6 +209,9 @@ void MP_FASTCODE(Softuart_Intr_Handler)(void *p) {
 
         // check level
         level = GPIO_INPUT_GET(GPIO_ID_PIN(s->pin_rx.gpio_id));
+        if (s->pin_rx.inverted)
+            level = !level;
+
         if (!level) {
             // pin is low
             // therefore we have a start bit
@@ -228,6 +233,8 @@ void MP_FASTCODE(Softuart_Intr_Handler)(void *p) {
             }
 
             for (i = 0; i < 8; i++) {
+                int val;
+
                 while ((get_ccount() - start_time) < s->bit_time) {
                     ;
                 }
@@ -235,7 +242,10 @@ void MP_FASTCODE(Softuart_Intr_Handler)(void *p) {
                 d >>= 1;
 
                 // read bit
-                if (GPIO_INPUT_GET(GPIO_ID_PIN(s->pin_rx.gpio_id))) {
+                val = GPIO_INPUT_GET(GPIO_ID_PIN(s->pin_rx.gpio_id));
+                if (s->pin_rx.inverted)
+                    val = !val;
+                if (val) {
                     // if high, set msb of 8bit to 1
                     d |= 0x80;
                 }
@@ -364,8 +374,11 @@ void MP_FASTCODE(Softuart_Putchar)(Softuart * s, char data)
         GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_rs485_tx_enable), 1);
     }
 
+    if (s->pin_tx.inverted)
+       data = ~data;
+
     // Start Bit
-    GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), 0);
+    GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), s->pin_tx.inverted);
     for (i = 0; i < 8; i++)
     {
         while ((get_ccount() - start_time) < s->bit_time) {
@@ -381,7 +394,7 @@ void MP_FASTCODE(Softuart_Putchar)(Softuart * s, char data)
     while ((get_ccount() - start_time) < s->bit_time) {
         ;
     }
-    GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), 1);
+    GPIO_OUTPUT_SET(GPIO_ID_PIN(s->pin_tx.gpio_id), !s->pin_tx.inverted);
 
     // Delay after byte, for new sync
     os_delay_us(s->bit_time * 6 / system_get_cpu_freq());

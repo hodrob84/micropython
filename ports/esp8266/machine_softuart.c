@@ -51,6 +51,7 @@ typedef struct {
     uint32_t baudrate;
     uint16_t timeout;       // timeout waiting for first char (in ms)
     uint16_t timeout_char;  // timeout waiting between chars (in ms)
+    bool inverted;
 } pyb_softuart_obj_t;
 
 STATIC const char *_parity_name[] = {"None", "ODD", "EVEN"};
@@ -74,14 +75,14 @@ STATIC uint8 verify_gpio_pin(mp_obj_t obj_pin) {
 
 STATIC void pyb_softuart_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "SoftUART(tx=%u, rx=%u, baudrate=%u, bits=%u, parity=%s, stop=%u, timeout=%u, timeout_char=%u)",
+    mp_printf(print, "SoftUART(tx=%u, rx=%u, baudrate=%u, bits=%u, parity=%s, stop=%u, timeout=%u, timeout_char=%u, inverted=%r)",
         mp_obj_get_pin(self->tx), mp_obj_get_pin(self->rx),
         self->baudrate, self->bits, _parity_name[self->parity],
-        self->stop, self->timeout, self->timeout_char);
+        self->stop, self->timeout, self->timeout_char, self->inverted);
 }
 
 STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_tx, ARG_rx, ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_timeout, ARG_timeout_char};
+    enum { ARG_tx, ARG_rx, ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_timeout, ARG_timeout_char, ARG_inverted};
     static const mp_arg_t allowed_args[] = {
         // TODO make tx-only/rx-only UART possible (by passing None)
         { MP_QSTR_tx, MP_ARG_REQUIRED | MP_ARG_OBJ },
@@ -92,23 +93,26 @@ STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, co
         { MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 1000} },
         { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 10} },
+        { MP_QSTR_inverted, MP_ARG_BOOL, {.u_obj = mp_const_false} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    self->inverted = args[ARG_inverted].u_bool;
 
     // assign the pins
     // TODO make tx-only/rx-only UART possible (by passing None)
     uint8 tx_pin = verify_gpio_pin(args[ARG_tx].u_obj);
     if (tx_pin != 0xFF) {
         // valid tx pin
-        Softuart_SetPinTx(self->softuart_ptr, tx_pin);
+        Softuart_SetPinTx(self->softuart_ptr, tx_pin, self->inverted);
     } else {
         mp_raise_ValueError(MP_ERROR_TEXT("invalid or no tx pin"));
     }
 
     uint8 rx_pin = verify_gpio_pin(args[ARG_rx].u_obj);
     if (rx_pin != 0xFF) {
-        Softuart_SetPinRx(self->softuart_ptr, rx_pin);
+        Softuart_SetPinRx(self->softuart_ptr, rx_pin, self->inverted);
     } else {
         mp_raise_ValueError(MP_ERROR_TEXT("invalid or no rx pin"));
     }
@@ -201,6 +205,7 @@ STATIC mp_obj_t pyb_softuart_make_new(const mp_obj_type_t *type, size_t n_args, 
     self->stop = 1;
     self->timeout = 1000;
     self->timeout_char = 10;
+    self->inverted = false;
 
     // init the peripheral
     mp_map_t kw_args;

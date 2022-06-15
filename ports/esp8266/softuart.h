@@ -11,6 +11,7 @@ typedef struct {
     uint8_t gpio_id;
     uint32_t gpio_mux_name;
     uint8_t gpio_func;
+    bool inverted;
 } softuart_pin_t;
 
 typedef struct {
@@ -38,8 +39,8 @@ uint32_t Softuart_Flush(Softuart *s);
 BOOL Softuart_rxWait(Softuart *s, uint32_t timeout_us);
 void Softuart_Intr_Handler(void *p);  // void* for type compatibility with etshal.h: void ets_isr_attach(int irq_no, void (*handler)(void *), void *arg);
 uint8_t Softuart_IsGpioValid(uint8_t gpio_id);
-void Softuart_SetPinRx(Softuart *s, uint8_t gpio_id);
-void Softuart_SetPinTx(Softuart *s, uint8_t gpio_id);
+void Softuart_SetPinRx(Softuart *s, uint8_t gpio_id, bool inverted);
+void Softuart_SetPinTx(Softuart *s, uint8_t gpio_id, bool inverted);
 void Softuart_EnableRs485(Softuart *s, uint8_t gpio_id);
 void Softuart_Init(Softuart *s, uint32_t baudrate);
 void Softuart_Putchar(Softuart *s, char data);
